@@ -50,8 +50,10 @@ verbatim, devDeps bumped, line-number stamps refreshed against the 1.3.0 dist.
     `parseSizeValue` L72 → **L81**; rendered-height resolve call L975 →
     **L984**; maxHeight composition clamp L855 → **L864**.
   - pi-tui `dist/tui-alt-screen.js`: full diff is two fake-cursor wraps plus
-    removal of the `shouldDeferViewportInputToOverlay()` wheel branch (#10769,
-    a pi-side transcript-scroll fix) — not mirrored by the fork (the fork
+    removal of the `shouldDeferViewportInputToOverlay()` wheel branch —
+    attributed to #10769 (focused fullscreen overlays blocking mouse-wheel
+    scrolling of the transcript), inferred from the wheel-branch removal (the
+    changelog does not name the mechanism) — not mirrored by the fork (the fork
     translates `handleMouse` coordinates; it does not transcribe alt-screen
     input routing).
   - pi-tui `dist/word-navigation.js`/`.d.ts`, `dist/native-platform.js`,
