@@ -3,9 +3,9 @@
  * injectable retry loop the fork's turn cycle wraps around `agent.prompt()`.
  *
  * The engine mirrors pi's turn retry semantics verbatim — classification
- * patterns are transcribed from `@earendil-works/pi-ai@1.1.0` (see
+ * patterns are transcribed from `@earendil-works/pi-ai@1.3.0` (see
  * `dist/utils/retry.js` and `dist/utils/overflow.js`, themselves the pieces
- * pi-agent-core 1.1.0's `publishResponse` composes). The tables are copied
+ * pi-coding-agent 1.3.0's `agent-session` classifies with). The tables are copied
  * here (with their source annotations) rather than imported so the engine
  * stays a pure, pi-runtime-free module driven by fakes in tests —
  * "照抄语义，不发明私有协议".
@@ -24,7 +24,7 @@ export interface RetryableFailure {
 }
 
 // =============================================================================
-// Classifier (pi-ai 1.1.0 semantics)
+// Classifier (pi-ai 1.3.0 semantics)
 // =============================================================================
 
 /** Non-retryable provider limit / billing exhaustion patterns (pi retry.js). */
@@ -72,13 +72,18 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
   "504",
   "520",
   "524",
-  "service.?unavailable",
+  // Also matches "The service is temporarily unavailable" (#10965).
+  "service.?(?:is.?)?(?:temporarily.?)?unavailable",
   "server.?error",
   "internal.?error",
   // Wrapper/provider text for transient upstream failures, including OpenRouter
-  // "Provider returned error" responses (#2264).
-  "provider.?returned.?error",
+  // "Provider returned error" responses (#2264) and gateway wording such as
+  // "The upstream provider returned an error" (#10842).
+  "provider.?returned.?(?:an.?)?error",
   "exceeded request buffer limit while retrying upstream",
+  // Gateway failure relaying the upstream response stream, sent as an OpenAI
+  // Responses `response.failed` event without an error code (#10920).
+  "unable to forward upstream",
   // Network, proxy, and fetch transport failures. This includes OpenAI Codex
   // raw-fetch failures such as "upstream connect", "connection refused", and
   // "reset before headers" (#733), plus OpenRouter connection drops (#3317).
@@ -187,7 +192,7 @@ function toRetryableFailure(error: RetryableInput): RetryableFailure | null {
   return null;
 }
 
-/** isContextOverflow mirror (pi-ai 1.1.0 dist/utils/overflow.js). */
+/** isContextOverflow mirror (pi-ai 1.3.0 dist/utils/overflow.js). */
 function isContextOverflow(message: RetryableFailure, contextWindow?: number): boolean {
   // Case 1: error-message patterns.
   if (message.stopReason === "error" && message.errorMessage) {
@@ -215,7 +220,7 @@ function isContextOverflow(message: RetryableFailure, contextWindow?: number): b
   return false;
 }
 
-/** isRetryableAssistantError mirror (pi-ai 1.1.0 dist/utils/retry.js). */
+/** isRetryableAssistantError mirror (pi-ai 1.3.0 dist/utils/retry.js). */
 function isRetryableAssistantError(message: RetryableFailure): boolean {
   if (message.stopReason !== "error" || !message.errorMessage) return false;
   if (NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN.test(message.errorMessage)) return false;
@@ -223,13 +228,13 @@ function isRetryableAssistantError(message: RetryableFailure): boolean {
 }
 
 /**
- * Classify a failed turn as retryable, mirroring pi-agent-core 1.1.0's
- * `publishResponse` decision order (overflow branch first, then the
+ * Classify a failed turn as retryable, mirroring pi-coding-agent 1.3.0's
+ * `agent-session` decision order (overflow branch first, then the
  * retryable branch): transient provider errors (overloaded / rate limit / 5xx /
  * transport) retry; context overflow, aborts, non-error stops, and
  * quota/billing exhaustion never do. Overflow wording wins when a message
  * also carries retryable wording — the overflow check runs first, exactly
- * like pi's publishResponse overflow branch precedes the retryable branch.
+ * like pi's agent-session overflow branch precedes the retryable branch.
  * When the caller knows the model's
  * context window it can be passed to also catch silent overflow (pi's
  * `isContextOverflow` cases 2/3); the fork's wiring binds it via the
@@ -255,7 +260,7 @@ export interface RetryPolicy {
   maxRetries: number;
   baseDelayMs: number;
   /**
-   * Backoff ceiling (pi 1.1.0 `retryDelayMs`): exponential delays are capped
+   * Backoff ceiling (pi 1.3.0 `retryDelayMs`): exponential delays are capped
    * here so long retry runs stay responsive; pi reads it from
    * `settings.retry.maxAgentDelayMs` and defaults to 60s
    * ({@link DEFAULT_MAX_AGENT_RETRY_DELAY_MS}).
@@ -306,7 +311,7 @@ export interface RunWithRetryOptions {
   policy: RetryPolicy;
 }
 
-/** pi 1.1.0 DEFAULT_MAX_AGENT_RETRY_DELAY_MS: agent backoff ceiling when
+/** pi 1.3.0 DEFAULT_MAX_AGENT_RETRY_DELAY_MS: agent backoff ceiling when
  * `settings.retry` sets no maxAgentDelayMs. */
 export const DEFAULT_MAX_AGENT_RETRY_DELAY_MS = 60_000;
 
@@ -359,7 +364,7 @@ function extractErrorMessage(result: unknown): string {
  * - A non-retryable result (success, abort, overflow, quota, …) returns as-is;
  * - a retryable failure retries up to `policy.maxRetries` times with
  *   `baseDelayMs * 2^(n-1)` backoff capped at `policy.maxAgentDelayMs`
- *   (default 60s, pi 1.1.0 parity), emitting `onAttempt` before each wait;
+ *   (default 60s, pi 1.3.0 parity), emitting `onAttempt` before each wait;
  * - budget exhaustion returns the final error result unchanged;
  * - an aborted `signal` interrupts the backoff wait — an abort that lands
  *   before a wait is scheduled skips it entirely — and returns the last
@@ -389,7 +394,7 @@ export async function runWithRetry(options: RunWithRetryOptions): Promise<unknow
     // skip scheduling a wait that would be interrupted immediately.
     if (signal?.aborted) return result;
     retryCount++;
-    // pi 1.1.0 retryDelayMs: exponential backoff with an overflow guard,
+    // pi 1.3.0 retryDelayMs: exponential backoff with an overflow guard,
     // capped at maxAgentDelayMs (default 60s).
     const rawDelay = baseDelayMs * 2 ** (retryCount - 1);
     const safeDelay = Number.isSafeInteger(rawDelay) ? rawDelay : Number.MAX_SAFE_INTEGER;

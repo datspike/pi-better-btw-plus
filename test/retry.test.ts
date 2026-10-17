@@ -103,6 +103,15 @@ describe("classifyRetryable", () => {
       "upstream service unavailable",
       "internal server error",
       "Provider returned error",
+      // pi 1.3.0 (issue #10842): "The upstream provider returned an error"
+      // is retried as a transient provider error.
+      "The upstream provider returned an error",
+      // pi 1.3.0 (issue #10965): "The service is temporarily unavailable"
+      // is retried instead of ending the turn.
+      "The service is temporarily unavailable",
+      // pi 1.3.0 (issue #10920): gateway failure relaying the upstream
+      // response stream (OpenAI Responses response.failed) is retried.
+      "Unable to forward upstream stream",
       "network error while talking to upstream",
       "connection refused",
       "connection lost",
@@ -301,7 +310,7 @@ describe("runWithRetry", () => {
     expect(outcome.notices).toHaveLength(3);
   });
 
-  test("backoff is capped at maxAgentDelayMs (pi 1.1.0 parity)", async () => {
+  test("backoff is capped at maxAgentDelayMs (pi 1.3.0 parity)", async () => {
     const f = err("overloaded");
     const outcome = await run([f], {
       policy: { maxRetries: 5, baseDelayMs: 1000, maxAgentDelayMs: 2000 },
